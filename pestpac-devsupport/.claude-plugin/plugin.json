@@ -1,0 +1,8 @@
+{
+  "name": "pestpac-devsupport",
+  "version": "0.1.0",
+  "description": "Investigate a Jira ticket across Jira, code/GitHub, local SQL, and Slack, then produce an inline root-cause analysis with suggested changes.",
+  "author": {
+    "name": "WorkWave PestPac"
+  }
+}

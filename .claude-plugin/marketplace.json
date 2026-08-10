@@ -1,0 +1,13 @@
+{
+  "name": "pestpac",
+  "owner": {
+    "name": "WorkWave PestPac"
+  },
+  "plugins": [
+    {
+      "name": "pestpac-devsupport",
+      "source": "./pestpac-devsupport",
+      "description": "Investigate a Jira ticket across Jira, code/GitHub, local SQL, and Slack, then produce an inline root-cause analysis with suggested changes."
+    }
+  ]
+}
