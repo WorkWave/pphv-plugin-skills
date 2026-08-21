@@ -20,7 +20,9 @@ Turn a ticket into a QE handoff — impacted areas, manual test cases, and a
 test-data plan — then post a **QE spec comment** plus an automation playbook to
 the ticket (nothing is posted until you confirm the drafted comment):
 ```
-/pestpac-devsupport:qe-steps PES-1234
+/pestpac-devsupport:qe-steps PES-1234              # asks you to pick the spec scope
+/pestpac-devsupport:qe-steps PES-1234 full         # full regression spec
+/pestpac-devsupport:qe-steps PES-1234 focused      # impacted flow only
 ```
 
 Mentor-style code review of your changes (correctness + PestPac coding
@@ -188,7 +190,23 @@ tenant field). It is skipped for code-style/design/feature/data-only tickets.
 
 `/pestpac-devsupport:qe-steps` runs the `qe-analysis` skill. It reuses a
 root-cause investigation already in the conversation for the same ticket, or runs
-the full `ticket-investigation` fan-out if there isn't one, then adds two agents:
+the full `ticket-investigation` fan-out if there isn't one.
+
+Once the blast radius is known it **asks you how wide the spec should be**, and
+that answer scopes everything downstream — the coverage search, the sections in
+the spec, the suggested tags, and the playbook:
+
+| Scope | You get |
+|---|---|
+| **Full regression** | Every consumer of the changed code, the full cross-browser matrix, the full edge-case sweep. The release-gate spec. `@Regression_Full`. |
+| **Impacted flow only** | The changed flow plus proof the change did not regress it — roughly 4–8 cases — and a **Deferred Coverage** section naming every consumer, browser, and edge case a full spec would have covered. The fast verification spec. `@Regression_Short` / `@Sanity`. |
+
+Pass `full` or `focused` as a second argument to skip the question. `focused`
+narrows *what* is searched, never *whether* it is searched — reuse-before-author
+still applies, and what it leaves out is always stated on the record rather than
+quietly dropped.
+
+It then adds two agents:
 
 - **`automation-coverage`** — searches `WorkWave/TestAutomation-PestPac`
   (Reqnroll · NUnit · Playwright) over the `gh` API for `.feature` scenarios that
@@ -209,7 +227,8 @@ the full `ticket-investigation` fan-out if there isn't one, then adds two agents
   Status`, `Test Category`, and the parent Test Set, and excludes tests labelled
   `DeleteMe` or closed-as-removed from a cycle.
 - **`qe-test-designer`** — designs the manual test cases (new behavior **and**
-  regression surface) plus the test-data plan, and assembles the playbook.
+  regression surface) at the chosen scope, plus the test-data plan, and assembles
+  the playbook. In `focused` mode it also returns the deferred-coverage list.
   Test data prefers API/UI seeding; SQL is a fallback emitted as **text only**,
   transaction-wrapped, and is never executed.
 
