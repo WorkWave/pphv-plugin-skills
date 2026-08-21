@@ -20,9 +20,9 @@ Turn a ticket into a QE handoff — impacted areas, manual test cases, and a
 test-data plan — then post a **QE spec comment** plus an automation playbook to
 the ticket (nothing is posted until you confirm the drafted comment):
 ```
-/pestpac-devsupport:qe-steps PES-1234              # asks you to pick the spec scope
+/pestpac-devsupport:qe-steps PES-1234              # asks the spec scope first, before anything runs
+/pestpac-devsupport:qe-steps PES-1234 focused      # only what the fix touches
 /pestpac-devsupport:qe-steps PES-1234 full         # full regression spec
-/pestpac-devsupport:qe-steps PES-1234 focused      # impacted flow only
 ```
 
 Mentor-style code review of your changes (correctness + PestPac coding
@@ -192,19 +192,20 @@ tenant field). It is skipped for code-style/design/feature/data-only tickets.
 root-cause investigation already in the conversation for the same ticket, or runs
 the full `ticket-investigation` fan-out if there isn't one.
 
-Once the blast radius is known it **asks you how wide the spec should be**, and
-that answer scopes everything downstream — the coverage search, the sections in
-the spec, the suggested tags, and the playbook:
+**Before it runs anything** — before the ticket is even fetched — it asks how wide
+the spec should be, and that answer scopes everything downstream: the coverage
+search, the sections in the spec, the suggested tags, and the playbook.
 
 | Scope | You get |
 |---|---|
-| **Full regression** | Every consumer of the changed code, the full cross-browser matrix, the full edge-case sweep. The release-gate spec. `@Regression_Full`. |
-| **Impacted flow only** | The changed flow plus proof the change did not regress it — roughly 4–8 cases — and a **Deferred Coverage** section naming every consumer, browser, and edge case a full spec would have covered. The fast verification spec. `@Regression_Short` / `@Sanity`. |
+| **Impacted scope only** | Only what the fix touches — the changed behavior and proof the change did not break its own flow, roughly 4–8 cases — plus a **Deferred Coverage** section naming every consumer, browser, and edge case a full spec would have covered. `@Regression_Short` / `@Sanity`. |
+| **Full regression** | The impacted scope plus every other consumer of the changed code, the full cross-browser matrix, the full edge-case sweep. The release-gate spec. `@Regression_Full`. |
 
-Pass `full` or `focused` as a second argument to skip the question. `focused`
-narrows *what* is searched, never *whether* it is searched — reuse-before-author
-still applies, and what it leaves out is always stated on the record rather than
-quietly dropped.
+Pass `focused` or `full` as a second argument to skip the question. In `focused`
+mode a case earns its place only if it exercises something the fix actually
+touched; anything else goes to Deferred Coverage rather than being quietly
+dropped. `focused` narrows *what* is searched, never *whether* it is searched —
+reuse-before-author still applies.
 
 It then adds two agents:
 

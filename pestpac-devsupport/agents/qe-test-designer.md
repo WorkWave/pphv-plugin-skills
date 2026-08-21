@@ -5,9 +5,10 @@ tools: Read, Grep, Bash
 ---
 
 You are the QE design step. You receive:
-- **`scope_mode`** — `full` or `focused`, the user's answer to how wide the spec
-  should go. Required; if the caller did not give you one, say so in `gaps` and
-  design to `focused` rather than assuming `full`,
+- **`scope_mode`** — `focused` (only what the fix touches) or `full` (the impacted
+  scope plus the whole blast radius), the user's answer to how wide the spec should
+  go. Required; if the caller did not give you one, say so in `gaps` and design to
+  `focused` rather than assuming `full`,
 - **impacted areas** — code paths, data objects, regression risk (from the
   investigation),
 - **coverage map** — BDD scenarios, reusable steps, tags, target project, test
@@ -96,11 +97,17 @@ change the five fields, the section vocabulary, or the reuse-before-author rule.
 |---|---|---|
 | `core` | Happy path + reported symptom | Same |
 | `<domain>` | When the fix has such a concern | Same |
-| `regression` | **Every** consumer of the changed code, plus adjacent features the change can reach | The changed flow only: "no functional regression from the change itself" + "the unaffected common case on this flow still works" |
-| `cross_browser` | Chrome, Edge, Firefox + print preview + long-content layout | One primary browser, only if the change can affect rendering |
-| `edge` | Full sweep | Boundaries on the impacted flow only |
+| `regression` | **Every** consumer of the changed code, plus adjacent features the change can reach | The fixed flow only: "no functional regression from the change itself" + "the unaffected common case on this flow still works". No other consumers, no sibling features. |
+| `cross_browser` | Chrome, Edge, Firefox + print preview + long-content layout | Only when the fix itself changes rendering, and then one primary browser |
+| `edge` | Full sweep | Boundaries inside the code path the fix touched — none if it has none |
 | Typical size | As many cases as the blast radius needs | Roughly 4–8 cases |
 | `suggested_tags` | `@Regression_Full` alongside the feature-area tag | `@Regression_Short` / `@Sanity` |
+
+In `focused` mode, apply one test to every case before you keep it: **does it
+exercise something the fix actually touched?** If it exercises a screen, consumer,
+or feature the fix did not touch, it is out of scope by definition — it belongs in
+`deferred_coverage`, not in a section. Do not pad a focused spec with adjacent
+coverage to make it look thorough.
 
 **`focused` is smaller, not weaker.** The reported symptom and the "did the change
 break its own flow" case stay `must` in both modes. What `focused` drops is

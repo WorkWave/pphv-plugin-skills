@@ -1,6 +1,6 @@
 ---
 name: qe-analysis
-description: Use when a Jira ticket needs a QE handoff rather than a root-cause report — "what should QA test for this", "write the QE spec", "add test steps to the ticket", "what regresses if we ship this". Asks whether the spec should be a full regression pass or cover the impacted flow only, then produces a QA Test Specification comment, a test-data plan, and an automation playbook scoped to that answer, and posts to the ticket only after explicit confirmation.
+description: Use when a Jira ticket needs a QE handoff rather than a root-cause report — "what should QA test for this", "write the QE spec", "add test steps to the ticket", "what regresses if we ship this". Asks first, before fetching or investigating anything, whether the spec should cover only the impacted scope of the fix or a full regression pass, then produces a QA Test Specification comment, a test-data plan, and an automation playbook scoped to that answer, and posts to the ticket only after explicit confirmation.
 ---
 
 # QE Analysis
@@ -14,15 +14,47 @@ Two artifacts come out of this:
 2. an **automation playbook** (`<TICKET-ID>.yaml`) attached to the ticket —
    machine-readable, for the test-authoring plugin that consumes it.
 
-**How wide both artifacts go is the user's call, not yours.** Step 3 asks whether
-they want a full-regression spec or a spec covering only the impacted flow, and
-that answer (`scope_mode`) scopes every step after it.
+**How wide both artifacts go is the user's call, not yours.** Step 1 asks — before
+you fetch the ticket or run anything — whether they want the impacted scope only
+or a full regression spec, and that answer (`scope_mode`) scopes every step after
+it. Asking is not optional and it is not deferrable.
 
 **The local filesystem stays read-only.** The playbook is assembled in memory and
 attached to the ticket; no file is written to disk. The only writes anywhere are
 the Jira comment and attachment, and only after the user confirms.
 
-## Step 1 — Fetch & triage (do this yourself, first)
+## Step 1 — Ask the spec scope (before anything else)
+
+**This is the first thing you do. No tool call comes before it** — not
+`getJiraIssue`, not a search, not a subagent. Scope decides how much work every
+later step does, so asking after the investigation wastes that work and asking
+after the design silently ignores the answer.
+
+Ask with `AskUserQuestion`:
+
+| `scope_mode` | Label | What the spec covers |
+|---|---|---|
+| `focused` | Impacted scope only | **Only what the fix touches** — the changed behavior itself, and proof the change did not break its own flow. Nothing beyond that. |
+| `full` | Full regression | The impacted scope **plus** every other consumer of the changed code, the full cross-browser matrix, and the full edge-case sweep — the release-gate spec. |
+
+Ask it straight, without steering. You have not read the ticket yet, so you have
+nothing to recommend from.
+
+**The only reason to skip the question** is that the invocation already answered
+it — `/qe-steps PES-1234 focused`, `/qe-steps PES-1234 full`, or a request phrased
+as "impacted scope only" / "full regression spec". Then echo the mode you read in
+one line and continue. Never default to one because the ticket looks small, looks
+big, or looks obvious.
+
+Carry `scope_mode` through every step that follows: the coverage breadth, the
+sections in the spec, the suggested tags, and the playbook all read it.
+
+If the investigation later shows the change reaches much further than the user
+probably had in mind — a shared include with many consumers, say — **say so once,
+in one sentence,** and let them decide whether to widen. Do not widen on your own,
+and do not re-ask.
+
+## Step 2 — Fetch & triage (do this yourself)
 
 Use the Atlassian MCP `getJiraIssue` to fetch summary, description, status, type,
 components, labels, comments, and linked issues. Extract the same **entities
@@ -42,7 +74,7 @@ Also pull, because the spec header needs them:
 
 If the ID is malformed or the ticket is not found, say so and stop.
 
-## Step 2 — Investigation (hybrid)
+## Step 3 — Investigation (hybrid)
 
 - **If the conversation already contains a root-cause investigation for this same
   ticket ID, reuse it.** Do not re-run the fan-out.
@@ -55,32 +87,6 @@ and recent-change risk — what a fix touches, and what could regress around it.
 For a shared include, common helper, or config file, the impacted area is
 **every consumer of it**, not just the screen in the ticket. Say so explicitly —
 the blast radius drives the Regression section of the spec.
-
-## Step 3 — Choose the spec scope (ask the user)
-
-The blast radius is known now, so the user can choose from evidence. **Ask before
-designing anything** — scope decides how wide the coverage search goes, how many
-cases get written, and what the spec is entitled to claim.
-
-Use `AskUserQuestion` with these two options:
-
-| `scope_mode` | Label | What it means |
-|---|---|---|
-| `full` | Full regression spec | Every consumer of the changed code, the full cross-browser matrix, and the full edge-case sweep — the release-gate spec |
-| `focused` | Impacted flow only | Only the flow the ticket changed, plus proof the change itself did not regress it — the fast verification spec |
-
-Put the blast radius in the question body so the choice is grounded — e.g. "this
-touches `includes/letterUtils.asp`, consumed by 6 screens." When the change is
-confined to a single screen, say that too: the two modes collapse to nearly the
-same spec and the user should know it before choosing.
-
-**Skip the question when the invocation already answered it** — `/qe-steps
-PES-1234 full`, `/qe-steps PES-1234 focused`, or a request phrased as "impacted
-flow only" / "full regression spec". Echo the mode you inferred in one line so a
-wrong inference is correctable.
-
-Carry `scope_mode` through Steps 4–8. The coverage breadth, the sections in the
-spec, the suggested tags, and the playbook all read it.
 
 ## Step 4 — Coverage (parallel)
 
@@ -107,9 +113,9 @@ concurrently (a single message with all applicable Agent calls):
 
 | Agent | `full` | `focused` |
 |---|---|---|
-| `automation-coverage` | The impacted areas **and their sibling features** — you need every scenario the blast radius could break | The impacted flow's own feature files only |
-| `xray-test-repo` | Impacted areas plus the feature area as a whole | The impacted flow's keywords only |
-| `confluence-docs` | Test plans and runbooks for the whole area | Only if the impacted flow has its own runbook or known-issue page; skip otherwise |
+| `automation-coverage` | The impacted areas **and their sibling features** — you need every scenario the blast radius could break | The fixed flow's own feature files only — do not fan out to sibling features |
+| `xray-test-repo` | Impacted areas plus the feature area as a whole | The fixed behavior's keywords only |
+| `confluence-docs` | Test plans and runbooks for the whole area | Only if the fixed flow has its own runbook or known-issue page; skip otherwise |
 | `sql-inspector` | Only when the ticket implies test-data setup | Identical — only when the ticket implies test-data setup |
 
 `focused` narrows **what you search for**, never **whether you search**. Reuse
@@ -117,7 +123,7 @@ before authoring still applies: a narrow spec built from invented steps is worse
 than no spec.
 
 Also mine **the ticket itself and its linked issues** (you already have them from
-Step 1): steps-to-reproduce, acceptance criteria, and any existing QA-steps
+Step 2): steps-to-reproduce, acceptance criteria, and any existing QA-steps
 comment are first-class step sources.
 
 "Not searched — `gh` unavailable" and "Xray not searched — Atlassian MCP
@@ -159,7 +165,7 @@ ticket: PES-1234
 summary: <one line>
 generated: <ISO timestamp>            # stamp this yourself
 scope: <one line — what changed and the blast radius>
-scope_mode: full                      # full | focused — the user's Step 3 answer
+scope_mode: full                      # focused | full — the user's Step 1 answer
 reference_env:
   url: http://crossbrowser.pes-0-XXXX.pestpac.local/
   creds: 00XXXX / admn
@@ -226,8 +232,8 @@ tickets and the shape is expected.
 shared file/module if one is involved and list every surface it reaches. State
 plainly when no functional logic changed.>
 
-**Testing scope:** <Full regression | Impacted flow only> — <one line on what this
-covers, and for Impacted flow only, what it deliberately does not>
+**Testing scope:** <Impacted scope only | Full regression> — <one line on what
+this covers, and for Impacted scope only, what it deliberately does not>
 
 **Reference environment:** `<url>` — creds `<companykey> / <user>`
 
@@ -262,24 +268,27 @@ entirely if the fix has no such concern.>
 
 ## Regression & Blast-Radius Tests
 
-<Full scope: every consumer of the changed code. Focused scope: the changed flow
-only. Either way include a "no functional regression from the change itself" case
-and an "unaffected common case still works" case.>
+<Full scope: every consumer of the changed code. Focused scope: the fixed flow
+and nothing else — no sibling features, no other consumers. Either way include a
+"no functional regression from the change itself" case and an "unaffected common
+case on this flow still works" case.>
 
 ---
 
 ## Cross-Browser & Visual
 
 <Chrome, Edge, Firefox; print preview where printing is involved; layout with
-long or unusual content. Focused scope: one primary browser. Omit if the change
-cannot affect rendering.>
+long or unusual content. Focused scope: omit unless the fix itself changes
+rendering, and then one primary browser only. Omit if the change cannot affect
+rendering.>
 
 ---
 
 ## Edge Cases
 
 <Boundaries, adjacency, metadata fields, round-trip edit/re-save. Focused scope:
-boundaries on the impacted flow only.>
+boundaries inside the code path the fix touched, and omit the section if the fix
+has none.>
 
 ---
 
@@ -315,14 +324,19 @@ focused spec safe to sign off on: the reader can see the hole.>
 |---|---|---|
 | Happy Path & Core | Always | Always |
 | `<Domain-Specific Correctness>` | When the fix has such a concern | When the fix has such a concern |
-| Regression & Blast-Radius | Every consumer of the changed code, plus adjacent features the change can reach | The changed flow only — "no functional regression from the change itself" and "the unaffected common case on this flow still works" |
-| Cross-Browser & Visual | Chrome, Edge, Firefox + print preview + long-content layout | One primary browser, and only if the change can affect rendering |
-| Edge Cases | Full sweep — boundaries, adjacency, metadata, round-trip | Boundaries on the impacted flow only |
+| Regression & Blast-Radius | Every consumer of the changed code, plus adjacent features the change can reach | **The fixed flow only** — "no functional regression from the change itself" and "the unaffected common case on this flow still works". No other consumers, no sibling features. |
+| Cross-Browser & Visual | Chrome, Edge, Firefox + print preview + long-content layout | Only when the fix itself changes rendering, and then one primary browser |
+| Edge Cases | Full sweep — boundaries, adjacency, metadata, round-trip | Boundaries inside the code path the fix touched — omit if it has none |
 | Deferred Coverage | Omit | **Required** |
 
 A `focused` spec is smaller, not weaker: the reported symptom and the "did the
 change break its own flow" case are `must` in both modes. What `focused` drops is
 breadth, and it drops it **on the record** in Deferred Coverage.
+
+The test for whether a case belongs in a `focused` spec: **does it exercise
+something the fix actually touched?** If it exercises a screen, consumer, or
+feature the fix did not touch, it is out of scope by definition — it goes in
+Deferred Coverage, not in a section.
 
 ### Rules for filling it
 
@@ -349,9 +363,10 @@ breadth, and it drops it **on the record** in Deferred Coverage.
 - Use only real seeded accounts and confirmed schema. Anything unverified goes
   in the playbook's `gaps` and is called out in **Scope** — never silently
   guessed.
-- **State the scope in the header (`Testing scope:`) and honor it in the sections.** A spec labelled
-  Impacted flow only must carry a Deferred Coverage section; one labelled Full
-  regression must not.
+- **State the scope in the header (`Testing scope:`) and honor it in the
+  sections.** A spec labelled Impacted scope only must carry a Deferred Coverage
+  section and must contain no case outside what the fix touched; one labelled Full
+  regression must not carry Deferred Coverage at all.
 - Include the test-data plan under **Preconditions** of the cases that need it.
   When `method: sql_fallback`, say "seed script attached in the playbook — DBA
   review required before running"; never inline the SQL in the comment.
@@ -376,8 +391,8 @@ If Jira write tools are unavailable entirely, print both the comment and the
 playbook YAML for the user to paste and save manually.
 
 ## Rules
-- **Scope is the user's decision.** Ask in Step 3 unless the invocation already
-  answered it. Never quietly narrow a `full` spec because the ticket looks small,
+- **Scope is the user's decision, and you ask for it first.** Step 1, before any
+  tool call, unless the invocation already answered it. Never quietly narrow a `full` spec because the ticket looks small,
   and never widen a `focused` one because the blast radius worries you — say the
   concern once, in one sentence, and let the user decide.
 - **A `focused` spec always declares what it left out.** Deferred Coverage in the
